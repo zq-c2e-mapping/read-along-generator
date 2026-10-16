@@ -1,0 +1,15 @@
+[project]
+name = "read-along-generator"
+version = "0.1.0"
+description = "Split audio at silent sections and generate read-along practice tracks."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "audioop-lts>=0.2.2,<0.3",
+    "pydub>=0.25.1,<0.26",
+    "pyyaml>=6.0.2,<7",
+]
+
+[tool.uv]
+package = false
+python-preference = "only-managed"

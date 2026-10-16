@@ -1,0 +1,37 @@
+shortcut_name: "音频跟读生成器"
+
+# FFmpeg(音频读写后端,必需)。pydub 默认在 PATH 中查找 ffmpeg 与 ffprobe,
+# 未加入 PATH 时在此指定;只覆盖本机路径时建议写在 config.local.yaml。
+ffmpeg:
+  directory: ""     # ffmpeg 与 ffprobe 所在目录,例: C:\ZQ\Dev\DevTools\ffmpeg\bin
+  ffmpeg_path: ""   # 可选:直接指定 ffmpeg 可执行文件,留空则用 directory 下的 ffmpeg(.exe)
+  ffprobe_path: ""  # 可选:直接指定 ffprobe 可执行文件,留空则用 directory 下的 ffprobe(.exe)
+
+# 用户输入的默认值(每次运行用户仍可在终端覆盖)
+defaults:
+  origin_times: 1                       # 原读遍数
+  repeat_times: 1                       # 跟读遍数
+  min_silence_duration_for_split: 701   # ms,分割静音时长阈值
+  silence_threshold_dbfs: -40.0         # dBFS,静音判断阈值。例: -10(喇叭声) / -30(说话声) / -50(呼吸声)
+  follow_duration_multiplier: 1.0       # 跟读静音 = 原片段时长 × 此倍数
+  remove_beep_sound: 0                  # 0:不去除滴声; 1:去除
+  beep_at_start: 0                      # 仅当 remove_beep_sound=1 时生效
+  beep_at_end: 0
+
+# 音频参数
+audio:
+  marker_padding_silence_ms: 500        # 提示音后追加的空白填充
+  split_offset_ms: 200                  # 分割点 = silent_end - 此值
+  min_split_gap_ms: 100                 # 两个相邻分割点的最小间距
+
+# 提示音文件名(本工具目录下)
+markers:
+  speech_marker: SpeechMarker.mp3
+  speech_end_marker: SpeechEndMarker.mp3
+  read_along_marker: ReadAlongMarker.mp3
+  read_along_end_marker: ReadAlongEndMarker.mp3
+
+# 输出
+output:
+  folder_name_template: '原读{origin}遍-跟读{repeat}遍'
+  fallback_format: wav                  # 主格式导出失败时的兜底

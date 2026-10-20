@@ -1,4 +1,4 @@
-"""跟读音频生成器:把音频按静音点切句,每句"原读 N 遍 + 跟读 M 遍",并在切换处插入提示音。
+"""跟读音频生成器:把音频按静音点切句,每句按"原读 N 遍 + 跟读 M 遍"组成一轮并重复 X 轮。
 
 运行: uv run --locked python main.py  (FFmpeg 可在 config.yaml 指定,或加入 PATH)
 """
@@ -14,31 +14,74 @@ from config import settings
 from ffmpeg_setup import configure_ffmpeg
 
 
+COMBINATION_SHORTCUTS = {
+    "1": (1, 1, "a+b"),
+    "2": (2, 1, "2a+b"),
+    "3": (3, 1, "3a+b"),
+    "4": (1, 2, "a+2b"),
+    "5": (2, 2, "2a+2b"),
+    "6": (3, 2, "3a+2b"),
+    "7": (3, 0, "3a+0b"),
+    "8": (5, 0, "5a+0b"),
+}
+
+
 def get_user_inputs():
     """读取用户输入,默认值来自 config.yaml。"""
     d = settings.defaults
     inputs = {}
     silence_prompt = "静音阈值(dBFS): 低于此值则静音。例: -10(喇叭声), -30(说话声), -50(呼吸声)。(数值越负,对声音越敏感)"
 
-    while True:
-        try:
-            val = input(f"请输入原读遍数 (默认: {d.origin_times}): ")
-            inputs["origin_times"] = int(val) if val else d.origin_times
-            if inputs["origin_times"] < 0:
-                raise ValueError("遍数不能为负")
-            break
-        except ValueError as e:
-            print(f"输入无效: {e}. 请输入一个非负整数。")
+    print("\n--- 原读/跟读组合快捷方式 ---")
+    print("a=原读, b=跟读")
+    print("  1: a+b     2: 2a+b   3: 3a+b   4: a+2b")
+    print("  5: 2a+2b   6: 3a+2b  7: 3a+0b  8: 5a+0b")
+    print("  0: 自定义原读次数、跟读次数和组合重复次数")
 
     while True:
         try:
-            val = input(f"请输入跟读遍数 (默认: {d.repeat_times}): ")
-            inputs["repeat_times"] = int(val) if val else d.repeat_times
-            if inputs["repeat_times"] < 0:
-                raise ValueError("遍数不能为负")
+            shortcut = input("请选择组合快捷键 (默认: 1): ").strip() or "1"
+            if shortcut not in {"0", *COMBINATION_SHORTCUTS}:
+                raise ValueError("快捷键必须是 0 到 8")
             break
         except ValueError as e:
-            print(f"输入无效: {e}. 请输入一个非负整数。")
+            print(f"输入无效: {e}。")
+
+    if shortcut == "0":
+        while True:
+            try:
+                val = input(f"请输入原读遍数 n (默认: {d.origin_times}): ")
+                inputs["origin_times"] = int(val) if val else d.origin_times
+                if inputs["origin_times"] < 0:
+                    raise ValueError("遍数不能为负")
+                break
+            except ValueError as e:
+                print(f"输入无效: {e}. 请输入一个非负整数。")
+
+        while True:
+            try:
+                val = input(f"请输入跟读遍数 m (默认: {d.repeat_times}): ")
+                inputs["repeat_times"] = int(val) if val else d.repeat_times
+                if inputs["repeat_times"] < 0:
+                    raise ValueError("遍数不能为负")
+                break
+            except ValueError as e:
+                print(f"输入无效: {e}. 请输入一个非负整数。")
+    else:
+        origin_times, repeat_times, shortcut_name = COMBINATION_SHORTCUTS[shortcut]
+        inputs["origin_times"] = origin_times
+        inputs["repeat_times"] = repeat_times
+        print(f"已选择: {shortcut} = {shortcut_name}")
+
+    while True:
+        try:
+            val = input(f"请输入‘原读+跟读’组合重复次数 (默认: {d.combination_times}): ")
+            inputs["combination_times"] = int(val) if val else d.combination_times
+            if inputs["combination_times"] <= 0:
+                raise ValueError("重复次数必须为正数")
+            break
+        except ValueError as e:
+            print(f"输入无效: {e}. 请输入一个正整数。")
 
     while True:
         try:
@@ -137,6 +180,7 @@ def process_audio_file(audio_path, output_dir, params, markers):
 
     origin_times = params["origin_times"]
     repeat_times = params["repeat_times"]
+    combination_times = params["combination_times"]
     min_silence_len_ms = params["min_silence_duration_for_split"]
     silence_thresh_dbfs = params["silence_threshold_dbfs"]
     follow_duration_multiplier = params["follow_duration_multiplier"]
@@ -265,26 +309,32 @@ def process_audio_file(audio_path, output_dir, params, markers):
         if len(segment) == 0:
             continue
 
-        for i in range(1, origin_times + 1):
-            new_audio += segment
-            marker_to_add = speech_marker if i < origin_times else speech_end_marker
-            if marker_to_add:
-                new_audio += marker_to_add
-                new_audio += marker_padding_silence
+        for combination_index in range(1, combination_times + 1):
+            print(
+                f"  片段组合 {combination_index}/{combination_times}: "
+                f"原读 {origin_times} 遍 + 跟读 {repeat_times} 遍"
+            )
 
-        follow_silence_duration_ms = max(0, int(len(segment) * follow_duration_multiplier))
-        silence_mono = AudioSegment.silent(duration=follow_silence_duration_ms, frame_rate=audio.frame_rate)
-        if audio.channels > 1:
-            silence_audio_extended = silence_mono.set_channels(audio.channels)
-        else:
-            silence_audio_extended = silence_mono
+            for i in range(1, origin_times + 1):
+                new_audio += segment
+                marker_to_add = speech_marker if i < origin_times else speech_end_marker
+                if marker_to_add:
+                    new_audio += marker_to_add
+                    new_audio += marker_padding_silence
 
-        for j in range(1, repeat_times + 1):
-            new_audio += silence_audio_extended
-            marker_follow = read_along_marker if j < repeat_times else read_along_end_marker
-            if marker_follow:
-                new_audio += marker_follow
-                new_audio += marker_padding_silence
+            follow_silence_duration_ms = max(0, int(len(segment) * follow_duration_multiplier))
+            silence_mono = AudioSegment.silent(duration=follow_silence_duration_ms, frame_rate=audio.frame_rate)
+            if audio.channels > 1:
+                silence_audio_extended = silence_mono.set_channels(audio.channels)
+            else:
+                silence_audio_extended = silence_mono
+
+            for j in range(1, repeat_times + 1):
+                new_audio += silence_audio_extended
+                marker_follow = read_along_marker if j < repeat_times else read_along_end_marker
+                if marker_follow:
+                    new_audio += marker_follow
+                    new_audio += marker_padding_silence
 
     original_filename = os.path.basename(audio_path)
     filename_base, file_extension = os.path.splitext(original_filename)
@@ -354,6 +404,7 @@ def main():
     folder_name = settings.output.folder_name_template.format(
         origin=user_params["origin_times"],
         repeat=user_params["repeat_times"],
+        combination=user_params["combination_times"],
     )
     output_dir = os.path.join(first_audio_parent_dir, folder_name)
 

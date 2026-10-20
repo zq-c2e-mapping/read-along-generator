@@ -11,6 +11,7 @@ ffmpeg:
 defaults:
   origin_times: 1                       # 原读遍数
   repeat_times: 1                       # 跟读遍数
+  combination_times: 1                  # “原读+跟读”组合重复次数
   min_silence_duration_for_split: 701   # ms,分割静音时长阈值
   silence_threshold_dbfs: -40.0         # dBFS,静音判断阈值。例: -10(喇叭声) / -30(说话声) / -50(呼吸声)
   follow_duration_multiplier: 1.0       # 跟读静音 = 原片段时长 × 此倍数
@@ -33,5 +34,5 @@ markers:
 
 # 输出
 output:
-  folder_name_template: '原读{origin}遍-跟读{repeat}遍'
+  folder_name_template: '原读{origin}遍-跟读{repeat}遍-组合{combination}轮'
   fallback_format: wav                  # 主格式导出失败时的兜底
